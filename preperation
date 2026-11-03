@@ -1,0 +1,376 @@
+WinPE for virtualisation
+
+A WinPE (Windows Preinstallation Environment) build that boots straight to a Command Prompt is actually one of the simplest and most useful custom PE projects. From the command prompt you can launch portable Windows software, scripts, recovery tools, file managers, and diagnostic utilities as well as virtual software
+What You'll Need
+1.	Windows ADK (Assessment and Deployment Kit)
+2.	WinPE Add-on for ADK
+3.	A USB flash drive (Minimum 8GB)
+Microsoft provides WinPE through the Windows ADK.
+Install ADK and WinPE Add-on
+Download and install:
+•	Windows ADK
+•	Windows PE Add-on for the ADK
+Create a Basic WinPE
+1.	Open Deployment and Imaging Tools Environment as Administrator: “copype amd64 C:\WinPE_amd64”
+2.	Create bootable media: “MakeWinPEMedia /UFD C:\WinPE_amd64 E:” Replace E: with your USB drive.
+Warning: this formats the USB drive.
+
+Customize Startup
+To customize the new WinPE builds, edit the image itself “startnet.cmd” lives inside the WinPE image: “C:\WinPE_amd64\media\sources\boot.wim“
+•	Open Deployment and Imaging Tools Environment as Administrator: “copype amd64 C:\WinPE_amd64”
+•	mount the image: “Dism /Mount-Image /ImageFile:C:\WinPE_amd64\media\sources\boot.wim /Index:1 /MountDir:C:\WinPE_amd64\mount”
+•	Add “choice.exe” to WinPE
+Copy C:\Windows\system32\choice.exe C:\WinPE_amd64\mount\Windows\System32
+•	Add required “dll” files to WinPE
+Copy C:\Windows\system32\glu32.dll C:\WinPE_amd64\mount\Windows\System32
+Copy C:\Windows\system32\msvcp140.dll C:\WinPE_amd64\mount\Windows\System32
+Copy C:\Windows\system32\msvcp140_1.dll C:\WinPE_amd64\mount\Windows\System32
+Copy C:\Windows\system32\msvcp140_2.dll C:\WinPE_amd64\mount\Windows\System32
+Copy C:\Windows\system32\vcruntime140.dll C:\WinPE_amd64\mount\Windows\System32
+Copy C:\Windows\system32\vcruntime140_1.dll C:\WinPE_amd64\mount\Windows\System32
+Copy C:\Windows\system32\concrt140.dll C:\WinPE_amd64\mount\Windows\System32
+Copy C:\Windows\system32\opengl32.dll C:\WinPE_amd64\mount\Windows\System32
+•	Edit it with Notepad: “notepad C:\WinPE_amd64\mount\Windows\System32\startnet.cmd”
+•	Add the following:
+@echo off
+wpeinit
+cls
+
+echo WinPE for Virtualisation is Ready
+echo ================================
+Echo.
+Pause
+
+Cls
+
+call X:\Menu\ USB_Drive_Detector.cmd
+
+Note: When WinPE boots, it automatically runs: “X:\Windows\System32\startnet.cmd” which is WinPE's startup script, that acts like autoexec.bat as .bat files aren’t fully supported. “wpeinit” initializes “Plug and Play, Network drivers, WinPE services and Storage devices” which usually left there.  
+
+•	USB drives detector: Create USB drives detector file “notepad C:\WinPE_amd64\mount\Menu\ USB_Drive_Detector.cmd”
+@echo off
+setlocal EnableDelayedExpansion
+
+echo Searching for USB drives...
+echo.
+
+for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
+
+    fsutil fsinfo drivetype %%D: 2>nul | find /i "Removable Drive" >nul
+
+    if not errorlevel 1 (
+
+        echo USB Drive Found: %%D:
+        vol %%D:
+
+        rem Check whether the volume label contains "WinPE"
+        vol %%D: | find /i "WinPE" >nul
+
+        if not errorlevel 1 (
+
+            echo.
+            echo WinPE volume detected on %%D:
+            echo Changing drive letter to Z:
+
+            >"%temp%\dp.txt" (
+                echo select volume %%D
+                echo assign letter=Z noerr
+            )
+
+            diskpart /s "%temp%\dp.txt"
+            del "%temp%\dp.txt"
+
+            echo.
+            echo Drive letter changed to Z:
+	REM label Z: Kashabech
+            
+        )
+    )
+)
+
+echo.
+
+Call X:\Menu\Main_Menu.cmd
+
+•	Drivers’ injection
+If any hardware isn’t detected, load the appropriate driver directly from the USB without rebuilding WinPE. The best approach is to keep the driver on the USB drive and install it every time you boot as any driver loaded this way is temporary. When WinPE reboots, the driver is gone because X: is recreated from scratch each boot.
+
+Create a folder “Drivers” with subfolders “Audio, Chipset, Graphics, Network, Storage, USB, WIFI”
+
+Create the injection batch file inside the “Menu” folder “notepad C:\WinPE_amd64\mount\Menu\Drivers_Injector.cmd”
+
+
+@echo off
+title Driver Injection Utility
+
+setlocal EnableDelayedExpansion
+
+set "DriversDir=Z:\Drivers"
+
+echo.
+echo ==========================================
+echo Scanning for driver INF files...
+echo ==========================================
+echo.
+
+set DRIVERCOUNT=0
+
+    for /r "%DriversDir%" %%F in (*.inf) do (
+    echo Found: %%F
+    set /a DRIVERCOUNT+=1
+
+    echo ------------------------------------------
+    echo Installing: %%F
+    echo ------------------------------------------
+
+    pnputil /add-driver "%%F" /install
+
+    if !errorlevel! EQU 0 (
+        echo SUCCESS
+    ) else (
+        echo FAILED
+    )
+
+    echo.
+)
+
+echo ==========================================
+echo Drivers Found: !DRIVERCOUNT!
+echo ==========================================
+echo.
+
+if !DRIVERCOUNT! EQU 0 (
+    echo No driver INF files found.
+)
+
+Pause
+
+•	Create “Main_Menu.cmd” under the folder “Menu” using “notepad C:\WinPE_amd64\Mount\Menu\Main_Menu.cmd”:
+@echo off
+title Main Menu
+
+:MENU
+cls
+echo ==================================
+echo MAIN MENU
+echo ==================================
+echo.
+echo 1. Virtualisation
+echo 2. WinPE Tools
+echo 3. Handy Tools
+echo 4. Files Browser
+echo 5. Install Hardware Driver
+echo 6. Exit to Command Prompt
+echo 7. Restart the computer
+echo 8. Shutdown the computer
+echo.
+choice /c 12345678 /n /m "Select an option: "
+
+if errorlevel 8 wpeutil shutdown
+if errorlevel 7 wpeutil reboot
+if errorlevel 6 goto CMD
+if errorlevel 5 goto DRIVERS
+if errorlevel 4 goto EXPLORER
+if errorlevel 3 goto TOOLS
+if errorlevel 2 goto WinPE
+if errorlevel 1 goto VIRT
+
+:VIRT
+call X:\Menu\Virtualisation.cmd
+goto MENU
+
+:WinPE
+call X:\Menu\WinPE_Tools_Menu.cmd
+goto MENU
+
+:TOOLS
+call X:\Menu\Tools_Menu.cmd
+goto MENU
+
+:DRIVERS
+Echo.
+Echo To install a specific driver, download it from the internet
+Echo and decompress it in “Drivers” folder than reselect option 5
+Echo.
+Call X:\Menu\Drivers_Injector.cmd
+Goto Menu
+
+:EXPLORER
+Z:\Tools\Explorer64++.exe
+goto MENU
+
+:CMD
+cls
+cmd
+goto MENU
+
+Technician’s Tools
+1.	Create a second batch file inside “Menu” folder “notepad C:\WinPE_amd64\Mount\Menu\WinPE_Tools_Menu.cmd” to use the “WinPE” tools.
+@echo off
+title WinPE Tools
+
+:MENU
+cls
+echo ==================================
+echo WinPE TOOLS
+echo ==================================
+echo.
+echo 1. Notepad
+echo 2. DiskPart
+echo 3. Registry Editor
+echo 4. Command Prompt
+echo 5. Files Browser
+echo 6. Back to Main Menu
+echo.
+choice /c 123456 /n /m "Select an option: "
+
+if errorlevel 6 exit /b
+if errorlevel 5 Z:\Tools\Explorer64++.exe
+if errorlevel 4 cmd
+if errorlevel 3 regedit
+if errorlevel 2 diskpart
+if errorlevel 1 notepad
+
+goto MENU
+
+2.	Create a batch file inside the “Menu” folder “notepad C:\WinPE_amd64\Mount\Menu\Tools_Menu.cmd” to read the contents of “Tools” folder from the USB drive and list them as menu to simplify running the tools.
+@echo off
+setlocal EnableDelayedExpansion
+
+:: Enable ANSI escape character
+for /f %%a in ('echo prompt $E^| cmd') do set "ESC=%%a"
+
+set "ToolDir=Z:\Tools"
+
+:MENU
+cls
+
+echo %ESC%[96m========================================================
+echo WINPE TOOLS LAUNCHER
+echo ========================================================%ESC%[0m
+echo.
+
+set Count=0
+
+for %%F in ("%ToolDir%\*.exe") do (
+set /a Count+=1
+set "Tool!Count!=%%~fF"
+
+echo %ESC%[93m!Count!.%ESC%[97m %%~nF
+)
+
+echo.
+echo %ESC%[91m0.%ESC%[97m Exit
+echo.
+
+set /p Choice=%ESC%[92mSelect Tool Number: %ESC%[0m
+
+if "%Choice%"=="0" exit /b
+
+if not defined Tool%Choice% (
+echo.
+echo %ESC%[91mInvalid Selection!%ESC%[0m
+timeout /t 2 >nul
+goto MENU
+)
+
+set "Selected=!Tool%Choice%!"
+
+cls
+echo %ESC%[92mLaunching:%ESC%[0m
+echo !Selected!
+echo.
+
+start "" "!Selected!"
+
+timeout /t 1 >nul
+goto MENU
+
+Virtualisation Tools
+Create the virtualisation batch file inside the “Menu” folder “notepad C:\WinPE_amd64\Mount\Menu\Virtualisation.cmd” to run the virtualisation software from a menu.
+@echo off
+setlocal EnableDelayedExpansion
+
+:: Enable ANSI escape character
+for /f %%a in ('echo prompt $E^| cmd') do set "ESC=%%a"
+
+set "ToolDir=Z:\VMSW"
+
+:MENU
+cls
+
+echo %ESC%[96m========================================================
+echo VIRTUAL TOOLS LAUNCHER
+echo ========================================================%ESC%[0m
+echo.
+
+set Count=0
+
+for %%F in ("%ToolDir%\*.cmd") do (
+set /a Count+=1
+set "Tool!Count!=%%~fF"
+
+echo %ESC%[93m!Count!.%ESC%[97m %%~nF
+)
+
+echo.
+echo %ESC%[91m0.%ESC%[97m Exit
+echo.
+
+set /p Choice=%ESC%[92mSelect Tool Number: %ESC%[0m
+
+if "%Choice%"=="0" exit /b
+
+if not defined Tool%Choice% (
+echo.
+echo %ESC%[91mInvalid Selection!%ESC%[0m
+timeout /t 2 >nul
+goto MENU
+)
+
+set "Selected=!Tool%Choice%!"
+
+cls
+echo %ESC%[92mLaunching:%ESC%[0m
+echo !Selected!
+echo.
+
+start "" "!Selected!"
+
+timeout /t 1 >nul
+goto MENU
+
+Adding common WinPE packages
+Adjust the ADK path for WinPE version:
+
+Dism /Image:C:\WinPE_amd64\mount /Add-Package /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-WMI.cab”
+ 
+Dism /Image:C:\WinPE_amd64\mount /Add-Package /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-Scripting.cab”
+ 
+Dism /Image:C:\WinPE_amd64\mount /Add-Package /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-NetFX.cab”
+ 
+Dism /Image:C:\WinPE_amd64\mount /Add-Package /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-PowerShell.cab”
+
+Dism /Image:C:\WinPE_amd64\mount /Add-Package /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-HTA.cab"
+
+Dism /Image:C:\WinPE_amd64\mount /Add-Package /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\StorageWMI.cab"
+
+	
+Unmounting WinPE image and creating the USB disk
+
+•	Commit the changes and unmount the image: 
+Dism /Unmount-Image /MountDir:C:\WinPE_amd64\mount /Commit
+•	Create the USB: MakeWinPEMedia /UFD C:\WinPE_amd64 E:
+Finalising WinPE USB disk
+
+Download the preferred Utilities that need to be used (portable versions only)
+Download virtualisation software (portable versions only)
+Create the following folder on the root of the USB drive: Tools, VMSW and VMs
+Uncompress the downloaded utilities in the “Tools” folder.
+Uncompress each portable virtualisation software in its own folder
+Create “cmd” files in VMSW folder to run the virtualisation software from its folder
+
+Note when creating virtual machine always store them in VMs folder. 
+
+Installing Virtualisation Software
+
